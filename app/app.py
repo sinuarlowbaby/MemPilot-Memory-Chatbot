@@ -20,10 +20,7 @@ app = FastAPI(lifespan=lifespan, title="Mem0 Chatbot", description="Mem0 Chatbot
 
 app.include_router(router)
 
-@app.get("/info")
-async def info():
-    return {"message": "Mem0 Chatbot API is running"}
-    
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="localhost", port=8000, reload=True)
