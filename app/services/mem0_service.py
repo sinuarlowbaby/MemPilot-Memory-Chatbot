@@ -17,18 +17,19 @@ mem0_config = {
         }
     },
     "llm": {
-        "model": "gpt-4o",
-        "temperature":0.5,
-        "stream": True,
-        "api_key": os.getenv("OPENAI_API_KEY")
-    },
-    "embedding": {
-        "model": "text-embedding-3-small",
         "provider": "openai",
-        "strip_accents": True,
-        "normalize_embeddings": True,
-        "batch_size": 1024,
-        "api_key": os.getenv("OPENAI_API_KEY")
+        "config": {
+            "model": "gpt-4o-mini",
+            "temperature": 0.2,
+            "api_key": os.getenv("OPENAI_API_KEY")
+        }
+    },
+    "embedder": {
+        "provider": "openai",
+        "config": {
+            "model": "text-embedding-3-small",
+            "api_key": os.getenv("OPENAI_API_KEY")
+        }
     },
     "cache": {
         "provider": "redis",

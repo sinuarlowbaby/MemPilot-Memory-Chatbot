@@ -1,13 +1,17 @@
-from fastapi import APIRouter,  HTTPException
+from fastapi import APIRouter,  HTTPException, BackgroundTasks
 from typing import Optional
 import uuid
-from services.mem0_service import memory
-from openai import OpenAI
+from app.services.mem0_service import memory
+from openai import AsyncOpenAI
 from dotenv import load_dotenv
+from langsmith import traceable
+from app.schemas.chat_request import ChatRequest
+from app.services.chat_service import get_chat_response, save_chat_memory
+
 
 load_dotenv()
 
-openai_client=OpenAI()
+openai_client= AsyncOpenAI()
 router = APIRouter()
 
 @router.get("/")
@@ -18,23 +22,14 @@ async def root():
 async def info():
     return {"message": "Mem0 Chatbot API is running"}
     
-@router.get("/chat")
-async def chat(query: str, session_id: Optional[str] = None):
-    if session_id is None:
-        session_id = str(uuid.uuid4())
+@router.post("/chat")
+async def chat(chat_request: ChatRequest, background_tasks: BackgroundTasks):
+    session_id = chat_request.session_id or str(uuid.uuid4())
+    user_query = chat_request.user_query
+    
+    ai_response = await get_chat_response(user_query, session_id)
+    
+    # Add memory task to background tasks (so it doesn't slow down response)
+    background_tasks.add_task(save_chat_memory, user_query, ai_response, session_id)
 
-    response = await openai_client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "user", "content": query}
-        ],
-        stream=True
-    )
-    full_response = ""
-    for chunk in response:
-        if chunk.choices[0].delta.content is not None:
-            full_response += chunk.choices[0].delta.content
-            await memory.save_user_message(full_response, user_id=session_id)
-            
-    await memory.save_agent_response(full_response, user_id=session_id)
-    return {"response": full_response, "session_id": session_id}
+    return {"response": ai_response, "session_id": session_id}
