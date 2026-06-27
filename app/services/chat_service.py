@@ -11,7 +11,7 @@ openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 redis_client = redis.from_url(os.getenv("REDIS_URL"), decode_responses=True)
 
 @traceable(run_type="llm", name="get_chat_response")
-async def get_chat_response(user_query: str, session_id: str, model: str = "gpt-4o") -> str:
+async def get_chat_response(user_query: str, session_id: str, model: str = "gpt-4o") -> tuple[str, bool]:
     # 1. Search for relevant memories
 
     cache_key = get_cache_key_sha256(user_query, session_id, model=model)
@@ -20,7 +20,7 @@ async def get_chat_response(user_query: str, session_id: str, model: str = "gpt-
         cached_response = redis_client.get(cache_key)
         if cached_response:
             print("Cache Hit! Serving response from Redis.")
-            return cached_response
+            return cached_response, True
     except Exception as e:
         print(f"Error getting cached response: {e}")
     
@@ -54,7 +54,7 @@ async def get_chat_response(user_query: str, session_id: str, model: str = "gpt-
     except Exception as e:
         print(f"Error caching response: {e}")
     
-    return ai_response 
+    return ai_response, False
 
 
 @traceable(run_type="tool", name="save_chat_memory")
