@@ -26,10 +26,12 @@ async def info():
 async def chat(chat_request: ChatRequest, background_tasks: BackgroundTasks):
     session_id = chat_request.session_id or str(uuid.uuid4())
     user_query = chat_request.user_query
+    model = chat_request.model
     
-    ai_response = await get_chat_response(user_query, session_id)
+    ai_response, cache_hit = await get_chat_response(user_query, session_id, model=model)
     
     # Add memory task to background tasks (so it doesn't slow down response)
-    background_tasks.add_task(save_chat_memory, user_query, ai_response, session_id)
+    if not cache_hit:
+        background_tasks.add_task(save_chat_memory, user_query, ai_response, session_id, model=model)
 
-    return {"response": ai_response, "session_id": session_id}
+    return {"response": ai_response, "session_id": session_id, "model": model, "cache_hit": cache_hit}

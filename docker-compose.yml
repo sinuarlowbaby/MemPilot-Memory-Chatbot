@@ -20,7 +20,30 @@ services:
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
+  redis-insight:
+    image: redis/redisinsight:latest
+    container_name: redis_insight
+    restart: unless-stopped
+    ports:
+      - "5540:5540"
+    volumes:
+      - redis-insight-data:/data
+    depends_on:
+      - redis
+  neo4j:
+    image: neo4j:5-community
+    container_name: mem0_neo4j
+    restart: unless-stopped
+    ports:
+      - "7474:7474"   # Neo4j Browser Console
+      - "7687:7687"   # Bolt Port (used for programmatic connection)
+    environment:
+      - NEO4J_AUTH=neo4j/password123
+    volumes:
+      - neo4j_data:/data
 
 volumes:
   qdrant_data:
   redis_data:
+  redis-insight-data:
+  neo4j_data:

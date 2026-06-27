@@ -17,6 +17,15 @@ mem0_config = {
             "api_key": os.getenv("QDRANT__SERVICE__API_KEY")
         }
     },
+    "graph_store":{
+        "provider": "neo4j",
+        "enabled": True,
+        "config": {
+            "url": os.getenv("NEO4J_URL"),
+            "username": os.getenv("NEO4J_USERNAME"),
+            "password": os.getenv("NEO4J_PASSWORD")
+        }
+    },
     "llm": {
         "provider": "openai",
         "config": {
@@ -30,15 +39,6 @@ mem0_config = {
         "config": {
             "model": "text-embedding-3-small",
             "api_key": os.getenv("OPENAI_API_KEY")
-        }
-    },
-    "cache": {
-        "provider": "redis",
-        "enabled": True,
-        "ttl_seconds": 60*60*24*7, # 7 days
-
-        "config": {
-            "url": os.getenv("REDIS_URL")
         }
     },
 }
