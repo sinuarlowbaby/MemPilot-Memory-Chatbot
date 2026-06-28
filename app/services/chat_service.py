@@ -6,6 +6,7 @@ from openai import AsyncOpenAI
 from app.services.mem0_service import memory
 from langsmith import traceable
 from app.services.hashing import get_cache_key_sha256
+from app.services.neo4j import add_knowledge_to_graph, search_graph
 
 openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 redis_client = redis.from_url(os.getenv("REDIS_URL"), decode_responses=True)
@@ -15,6 +16,7 @@ async def get_chat_response(user_query: str, session_id: str, model: str = "gpt-
     # 1. Search for relevant memories
 
     cache_key = get_cache_key_sha256(user_query, session_id, model=model)
+    print(cache_key)
     
     try:
         cached_response = redis_client.get(cache_key)
@@ -27,6 +29,7 @@ async def get_chat_response(user_query: str, session_id: str, model: str = "gpt-
     print("Cache Miss. Generating new response.")
 
     relevent_memories = memory.search(query=user_query, filters={"user_id": session_id})
+
     
     # 2. Build the prompt
     prompt = f"""
@@ -46,6 +49,7 @@ async def get_chat_response(user_query: str, session_id: str, model: str = "gpt-
             {"role": "user", "content": prompt}
         ],
     )
+    
     ai_response = response.choices[0].message.content
 
     try:
@@ -70,8 +74,6 @@ def save_chat_memory(user_query: str, ai_response: str, session_id: str, model: 
             metadata= {
                 "session_id": session_id,
                 "model": model,
-                "source": "chat",
-                "message_type": "conversation",
                 "timestamp": datetime.now().isoformat(),
             })
     except Exception as e:

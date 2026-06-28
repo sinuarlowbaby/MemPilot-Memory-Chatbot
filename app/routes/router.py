@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from langsmith import traceable
 from app.schemas.chat_request import ChatRequest
 from app.services.chat_service import get_chat_response, save_chat_memory
-
+from app.services.neo4j import add_knowledge_to_graph, search_graph
 
 load_dotenv()
 
@@ -33,5 +33,7 @@ async def chat(chat_request: ChatRequest, background_tasks: BackgroundTasks):
     # Add memory task to background tasks (so it doesn't slow down response)
     if not cache_hit:
         background_tasks.add_task(save_chat_memory, user_query, ai_response, session_id, model=model)
+
+    background_tasks.add_task(add_knowledge_to_graph, user_query, ai_response, session_id)
 
     return {"response": ai_response, "session_id": session_id, "model": model, "cache_hit": cache_hit}
