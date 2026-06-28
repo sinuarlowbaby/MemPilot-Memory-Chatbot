@@ -1,93 +1,141 @@
-from typing import Optional
-from llama_index.core import PropertyGraphIndex
 import os
-from llama_index.core import Document
-from llama_index.graph_stores.neo4j import Neo4jPropertyGraphStore
-from llama_index.llms.openai import OpenAI
-from datetime import datetime
+import copy
 import logging
-import json
+from typing import Optional
+from neo4j import GraphDatabase
+from openai import AsyncOpenAI
 from langsmith import traceable
-from llama_index.core.indices.property_graph import SimpleLLMPathExtractor
+from app.schemas.neo4j_schema import MemoryFacts
 from app.prompts.memory_prompt import MEMORY_PROMPT
 
+logger = logging.getLogger(__name__)
 
+# Use AsyncOpenAI directly - avoids litellm schema transformation issues
+openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-logger=logging.getLogger(__name__)
-
-llm = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), model="gpt-4o-mini", temperature=0.2)
-
-graph_store = Neo4jPropertyGraphStore(
-    url=os.getenv("NEO4J_URL"),
-    username=os.getenv("NEO4J_USERNAME"),
-    password=os.getenv("NEO4J_PASSWORD")
+# Connect directly to Neo4j using the official driver
+neo4j_driver = GraphDatabase.driver(
+    os.getenv("NEO4J_URL"),
+    auth=(os.getenv("NEO4J_USERNAME"), os.getenv("NEO4J_PASSWORD"))
 )
 
-extractor = SimpleLLMPathExtractor(
-    llm=llm,
-    extract_prompt=MEMORY_PROMPT,
-)
 
-graph_index= PropertyGraphIndex.from_existing(
-    property_graph_store=graph_store,
-    llm=llm,
-    kg_extractors=[extractor],
-    show_progress=True,
-    # possible_entities=[
-    #     "Person",
-    #     "Project",
-    #     "Technology",
-    #     "Framework",
-    #     "Database",
-    #     "Company",
-    #     "Skill",
-    #     "Goal",
-    # ],
-    # possible_relations=[
-    #     "USES",
-    #     "WORKS_ON",
-    #     "LIKES",
-    #     "LEARNS",
-    #     "CREATED",
-    #     "DEPENDS_ON",
-    #     "PREFERS",
-    # ],
-    # strict=True,
-)
+def make_strict_schema(schema: dict) -> dict:
+    """
+    Recursively ensures all object types have:
+    - "additionalProperties": false
+    - all properties listed as "required"
+    Required by OpenAI strict structured output mode.
+    """
+    schema = copy.deepcopy(schema)
 
-query_engine = graph_index.as_query_engine()
+    def _fix(obj):
+        if not isinstance(obj, dict):
+            return
+        if obj.get("type") == "object" and "properties" in obj:
+            obj["additionalProperties"] = False
+            obj["required"] = list(obj["properties"].keys())
+        for value in obj.values():
+            if isinstance(value, dict):
+                _fix(value)
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, dict):
+                        _fix(item)
+
+    _fix(schema)
+    return schema
+
+
+async def extract_structured_knowledge(text_content: str) -> MemoryFacts:
+    """
+    Uses OpenAI's structured outputs (beta.parse) with MEMORY_PROMPT to parse
+    conversation text directly into the MemoryFacts pydantic model.
+    """
+    response = await openai_client.beta.chat.completions.parse(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": MEMORY_PROMPT},
+            {"role": "user", "content": "Extract relationships from the following text:\n" + text_content}
+        ],
+        response_format=MemoryFacts,
+        temperature=0.1
+    )
+    return response.choices[0].message.parsed
 
 
 @traceable(run_type="tool", name="add_knowledge_to_graph")
-async def add_knowledge_to_graph(query, ai_response, session_id) -> Optional[bool]:
+async def add_knowledge_to_graph(query: str, ai_response: str, session_id: str) -> Optional[bool]:
+    text_content = f"User asked: {query.strip()}\nAssistant answered: {ai_response.strip()}"
 
-    text_content = f"""User Query: {query}\nSession ID: {session_id}\nAssistant Response: {ai_response}"""
-
-    doc = Document(text = text_content,
-        metadata={"session_id": session_id,
-            "timestamp": datetime.utcnow().isoformat(),
-            "source": "chat",
-        },  
-    )
     try:
-        logger.info("Adding knowledge to graph...")
+        logger.info("Extracting structured relationships...")
+        facts = await extract_structured_knowledge(text_content)
 
-        graph_index.insert(doc)
-        logger.info("Knowledge added to graph successfully.")
+        if not facts.store:
+            logger.info("No long-term memories extracted. Skipping graph insert.")
+            return True
+
+        logger.info("Writing entities and relationships directly to Neo4j...")
+
+        cypher_query = """
+        UNWIND $relationships AS rel
+        MERGE (source:Entity {name: rel.source})
+        ON CREATE SET source.type = rel.source_type
+
+        MERGE (target:Entity {name: rel.target})
+        ON CREATE SET target.type = rel.target_type
+
+        WITH source, target, rel
+        CALL apoc.create.relationship(source, rel.relation, {confidence: rel.confidence, session_id: $session_id}, target)
+        YIELD rel as created_rel
+        RETURN count(*)
+        """
+
+        entity_map = {e.name: e.type for e in facts.entities}
+
+        relationships_data = [
+            {
+                "source": rel.source,
+                "source_type": entity_map.get(rel.source, "Concept"),
+                "relation": rel.relation.upper().replace(" ", "_"),
+                "target": rel.target,
+                "target_type": entity_map.get(rel.target, "Concept"),
+                "confidence": rel.confidence
+            }
+            for rel in facts.relationships
+        ]
+
+        if relationships_data:
+            with neo4j_driver.session() as session:
+                session.run(cypher_query, relationships=relationships_data, session_id=session_id)
+            logger.info(f"Successfully added {len(relationships_data)} relationships to Neo4j.")
+        else:
+            logger.info("No relationships found to insert.")
+
     except Exception:
-        logger.exception("Error adding knowledge to graph")
+        logger.exception("Error adding structured knowledge to Neo4j")
         return None
     return True
 
-@traceable(run_type="tool", name="search_graph")
-def search_graph(query: str) -> str:
-    try:
-        logger.info("Searching graph...")
-        response = query_engine.query(query)
-        logger.info("Graph search completed.")
-        return response.text
-    except Exception:
-        logger.exception("Error searching graph")
-        return None
-        
 
+@traceable(run_type="tool", name="search_graph")
+async def search_graph(query: str) -> str:
+    """
+    Search relationships in Neo4j directly matching the query entity name.
+    """
+    cypher_query = """
+    MATCH (s:Entity)-[r]->(t:Entity)
+    WHERE s.name CONTAINS $query OR t.name CONTAINS $query
+    RETURN s.name + ' ' + type(r) + ' ' + t.name AS relationship
+    LIMIT 10
+    """
+    try:
+        logger.info("Querying Neo4j database...")
+        with neo4j_driver.session() as session:
+            result = session.run(cypher_query, query=query)
+            records = [record["relationship"] for record in result]
+            return "\n".join(records) if records else "No matching relationships found."
+    except Exception:
+        logger.exception("Error searching Neo4j")
+        return ""
