@@ -13,6 +13,8 @@ Store:
 - education
 - locations
 - relationships
+- hobbies
+- name
 
 DO NOT store:
 - greetings
