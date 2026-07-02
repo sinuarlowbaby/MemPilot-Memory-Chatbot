@@ -28,7 +28,7 @@ async def chat(chat_request: ChatRequest, background_tasks: BackgroundTasks):
     user_query = chat_request.user_query
     model = chat_request.model
     
-    ai_response, cache_hit = await get_chat_response(user_query, session_id, model=model)
+    ai_response, cache_hit, relevant_memories, graph_relations = await get_chat_response(user_query, session_id, model=model)
     
     # Add memory task to background tasks (so it doesn't slow down response)
     if not cache_hit:
@@ -36,4 +36,11 @@ async def chat(chat_request: ChatRequest, background_tasks: BackgroundTasks):
 
     background_tasks.add_task(add_knowledge_to_graph, user_query, ai_response, session_id)
 
-    return {"response": ai_response, "session_id": session_id, "model": model, "cache_hit": cache_hit}
+    return {
+        "response": ai_response, 
+        "session_id": session_id, 
+        "model": model, 
+        "cache_hit": cache_hit,
+        "memories": relevant_memories,
+        "graph_relations": graph_relations
+    }

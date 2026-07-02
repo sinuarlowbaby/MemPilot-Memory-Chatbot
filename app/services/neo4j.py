@@ -126,14 +126,14 @@ async def search_graph(query: str) -> str:
     """
     cypher_query = """
     MATCH (s:Entity)-[r]->(t:Entity)
-    WHERE s.name CONTAINS $query OR t.name CONTAINS $query
+    WHERE s.name CONTAINS $search_term OR t.name CONTAINS $search_term
     RETURN s.name + ' ' + type(r) + ' ' + t.name AS relationship
     LIMIT 10
     """
     try:
         logger.info("Querying Neo4j database...")
         with neo4j_driver.session() as session:
-            result = session.run(cypher_query, query=query)
+            result = session.run(cypher_query, search_term=query)
             records = [record["relationship"] for record in result]
             return "\n".join(records) if records else "No matching relationships found."
     except Exception:

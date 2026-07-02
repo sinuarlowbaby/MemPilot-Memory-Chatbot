@@ -1,5 +1,5 @@
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 from app.main import app
 
 client = TestClient(app)
@@ -7,16 +7,19 @@ client = TestClient(app)
 def test_chat_endpoint_returns_200():
     with patch("app.services.chat_service.redis_client") as mock_redis, \
          patch("app.services.chat_service.memory") as mock_memory, \
+         patch("app.services.chat_service.search_graph", new_callable=AsyncMock) as mock_search_graph, \
          patch("app.services.chat_service.openai_client") as mock_openai:
 
         mock_redis.get.return_value = "Cached!"
+        mock_search_graph.return_value = "User LIKES Python"
         response = client.post("/chat", json={
             "user_query": "hello",
             "session_id": "test_user",
             "model": "gpt-4o"
         })
         assert response.status_code == 200
-        assert isinstance(response.json(), str)
+        assert isinstance(response.json(), dict)
+        assert response.json()["response"] == "Cached!"
 
 def test_chat_endpoint_missing_field_returns_422():
     response = client.post("/chat", json={"session_id": "test"})  # missing user_query
