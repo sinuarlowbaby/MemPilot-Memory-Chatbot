@@ -15,8 +15,8 @@ openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Connect directly to Neo4j using the official driver
 neo4j_driver = GraphDatabase.driver(
-    os.getenv("NEO4J_URL"),
-    auth=(os.getenv("NEO4J_USERNAME"), os.getenv("NEO4J_PASSWORD"))
+    os.getenv("NEO4J_URL", "bolt://localhost:7687"),
+    auth=(os.getenv("NEO4J_USERNAME", "neo4j"), os.getenv("NEO4J_PASSWORD", "password"))
 )
 
 
