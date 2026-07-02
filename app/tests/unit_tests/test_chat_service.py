@@ -37,3 +37,19 @@ async def test_get_chat_response_calls_openai_on_cache_miss():
         mock_redis.get.assert_called_once()
         mock_openai.chat.completions.create.assert_awaited_once()
         mock_memory.search.assert_called_once()
+
+
+def test_save_chat_memory():
+    """Verify save_chat_memory calls memory.add with correct parameters"""
+    with patch("app.services.chat_service.memory") as mock_memory:
+        from app.services.chat_service import save_chat_memory
+        
+        save_chat_memory("My query", "My response", "session123")
+        
+        mock_memory.add.assert_called_once()
+        args, kwargs = mock_memory.add.call_args
+        assert kwargs["user_id"] == "session123"
+        assert kwargs["metadata"]["session_id"] == "session123"
+        assert len(args[0]) == 2  # user and assistant turns
+        assert args[0][0]["content"] == "My query"
+        assert args[0][1]["content"] == "My response"
