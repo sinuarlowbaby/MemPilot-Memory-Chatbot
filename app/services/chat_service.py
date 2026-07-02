@@ -9,7 +9,7 @@ from app.services.hashing import get_cache_key_sha256
 from app.services.neo4j import add_knowledge_to_graph, search_graph
 
 openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-redis_client = redis.from_url(os.getenv("REDIS_URL"), decode_responses=True)
+redis_client = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"), decode_responses=True)
 
 @traceable(run_type="llm", name="get_chat_response")
 async def get_chat_response(user_query: str, session_id: str, model: str = "gpt-4o") -> tuple[str, bool]:
