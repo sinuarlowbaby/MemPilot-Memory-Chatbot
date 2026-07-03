@@ -120,22 +120,58 @@ async def add_knowledge_to_graph(query: str, ai_response: str, session_id: str) 
 
 
 @traceable(run_type="tool", name="search_graph")
-async def search_graph(query: str) -> str:
+async def search_graph(query: str, session_id: str = "") -> str:
     """
-    Search relationships in Neo4j directly matching the query entity name.
+    Search relationships in Neo4j scoped to a specific user session.
+    When session_id is provided, only relationships written by that user
+    are returned, ensuring strict per-user data isolation.
     """
-    cypher_query = """
-    MATCH (s:Entity)-[r]->(t:Entity)
-    WHERE s.name CONTAINS $search_term OR t.name CONTAINS $search_term
-    RETURN s.name + ' ' + type(r) + ' ' + t.name AS relationship
-    LIMIT 10
-    """
+    if session_id:
+        # Scoped query: only return relationships belonging to this user
+        cypher_query = """
+        MATCH (s:Entity)-[r]->(t:Entity)
+        WHERE r.session_id = $session_id
+          AND (s.name CONTAINS $search_term OR t.name CONTAINS $search_term)
+        RETURN s.name + ' ' + type(r) + ' ' + t.name AS relationship
+        LIMIT 10
+        """
+        params = {"search_term": query, "session_id": session_id}
+    else:
+        # Fallback: no session filter (used in tests / admin contexts only)
+        cypher_query = """
+        MATCH (s:Entity)-[r]->(t:Entity)
+        WHERE s.name CONTAINS $search_term OR t.name CONTAINS $search_term
+        RETURN s.name + ' ' + type(r) + ' ' + t.name AS relationship
+        LIMIT 10
+        """
+        params = {"search_term": query}
+
     try:
-        logger.info("Querying Neo4j database...")
-        with neo4j_driver.session() as session:
-            result = session.run(cypher_query, search_term=query)
+        logger.info(f"Querying Neo4j for session='{session_id}' query='{query}'")
+        with neo4j_driver.session() as neo4j_session:
+            result = neo4j_session.run(cypher_query, **params)
             records = [record["relationship"] for record in result]
             return "\n".join(records) if records else "No matching relationships found."
     except Exception:
         logger.exception("Error searching Neo4j")
         return ""
+
+
+def get_all_user_graph(session_id: str) -> list[str]:
+    """
+    Return ALL graph relationships stored for a specific user session.
+    No text filter — used to display the full memory graph in the UI.
+    """
+    cypher_query = """
+    MATCH (s:Entity)-[r]->(t:Entity)
+    WHERE r.session_id = $session_id
+    RETURN s.name + ' ' + type(r) + ' ' + t.name AS relationship
+    ORDER BY r.confidence DESC
+    """
+    try:
+        with neo4j_driver.session() as neo4j_session:
+            result = neo4j_session.run(cypher_query, session_id=session_id)
+            return [record["relationship"] for record in result]
+    except Exception:
+        logger.exception("Error fetching full user graph")
+        return []

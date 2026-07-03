@@ -1,32 +1,32 @@
 from datetime import datetime
 import os
 import redis
-from typing import Dict, Any
-from openai import AsyncOpenAI
 from app.services.mem0_service import memory
+from app.services.llm_call import call_llm
 from langsmith import traceable
 from app.services.hashing import get_cache_key_sha256
 from app.services.neo4j import add_knowledge_to_graph, search_graph
 
-openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 redis_client = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"), decode_responses=True)
 
 @traceable(run_type="llm", name="get_chat_response")
-async def get_chat_response(user_query: str, session_id: str, model: str = "gpt-4o") -> tuple[str, bool, list, list]:
+async def get_chat_response(user_query: str, session_id: str, model: str = "groq/llama-3.3-70b-versatile") -> tuple[str, bool, list, list]:
     # 1. Search for relevant memories
     relevent_memories = []
     try:
-        relevent_memories = memory.search(query=user_query, filters={"user_id": session_id})
+        raw = memory.search(query=user_query, filters={"user_id": session_id})
+        # Mem0 wraps results under a 'results' key
+        relevent_memories = raw.get("results", []) if isinstance(raw, dict) else raw
     except Exception as e:
         print(f"Error searching Mem0: {e}")
 
-    # Search graph relationships
+    # Search graph relationships scoped to this user's session
     graph_relations = []
     try:
-        graph_rels_str = await search_graph(user_query)
+        graph_rels_str = await search_graph(user_query, session_id=session_id)
         graph_relations = [
-            line.strip() 
-            for line in graph_rels_str.split("\n") 
+            line.strip()
+            for line in graph_rels_str.split("\n")
             if line.strip() and "No matching relationships" not in line
         ]
     except Exception as e:
@@ -42,27 +42,8 @@ async def get_chat_response(user_query: str, session_id: str, model: str = "gpt-
         print(f"Error getting cached response: {e}")
     
     print("Cache Miss. Generating new response.")
-    
-    # 2. Build the prompt
-    prompt = f"""
-        You are a helpful assistant. You are given a user query and a list of relevant memories.
-        Use the memories to answer the user query.
 
-        User Query: {user_query}
-        Relevant Memories: {relevent_memories}
-
-        Answer: 
-        """
-    
-    # 3. Get response from OpenAI
-    response = await openai_client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "user", "content": prompt}
-        ],
-    )
-    
-    ai_response = response.choices[0].message.content
+    ai_response = await call_llm(user_query, relevent_memories, session_id, model)
 
     try:
         redis_client.setex(cache_key, 60 * 60, ai_response)
@@ -74,7 +55,7 @@ async def get_chat_response(user_query: str, session_id: str, model: str = "gpt-
 
 
 @traceable(run_type="tool", name="save_chat_memory")
-def save_chat_memory(user_query: str, ai_response: str, session_id: str, model: str = "gpt-4o"):
+def save_chat_memory(user_query: str, ai_response: str, session_id: str, model: str = "openai/gpt-4o"):
     # 4. Save both user query and assistant response to memory
     try:
         memory.add(
