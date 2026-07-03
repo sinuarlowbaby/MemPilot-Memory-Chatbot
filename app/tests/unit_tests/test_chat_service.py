@@ -7,36 +7,48 @@ from app.services.chat_service import get_chat_response
 async def test_get_chat_response_cache_hit():
     """If Redis has a cached answer, return it without calling OpenAI"""
 
-    with patch("app.services.chat_service.redis_client") as mock_redis:
+    with patch("app.services.chat_service.redis_client") as mock_redis, \
+         patch("app.services.chat_service.memory") as mock_memory, \
+         patch("app.services.chat_service.search_graph", new_callable=AsyncMock) as mock_search_graph:
+        
         mock_redis.get.return_value = "Cached answer"
+        mock_memory.search.return_value = []
+        mock_search_graph.return_value = "No matching relationships found."
 
-        result, is_cache = await get_chat_response("hello", "user1")
+        result, is_cache, memories, graph_rels = await get_chat_response("hello", "user1")
 
         assert result == "Cached answer"
         assert is_cache == True
+        assert memories == []
+        assert graph_rels == []
         mock_redis.get.assert_called_once()
         
 
 @pytest.mark.asyncio
 async def test_get_chat_response_calls_openai_on_cache_miss():
-    """If Redis has no cache, OpenAI should be called"""
+    """If Redis has no cache, the LLM (via call_llm) should be called"""
 
     with patch("app.services.chat_service.redis_client") as mock_redis, \
-        patch("app.services.chat_service.openai_client") as mock_openai, \
-        patch("app.services.chat_service.memory") as mock_memory:
-        
-        mock_redis.get.return_value = None
-        mock_memory.search.return_value = []
-        mock_openai.chat.completions.create = AsyncMock(return_value=MagicMock(choices=[MagicMock(message=MagicMock(content="AI answer"))]))
+         patch("app.services.chat_service.call_llm", new_callable=AsyncMock) as mock_llm, \
+         patch("app.services.chat_service.memory") as mock_memory, \
+         patch("app.services.chat_service.search_graph", new_callable=AsyncMock) as mock_search_graph:
 
-        result, is_cache = await get_chat_response("hello", "user1")
+        mock_redis.get.return_value = None
+        mock_memory.search.return_value = {"results": [{"memory": "User likes Python"}]}
+        mock_search_graph.return_value = "User WORKS_AT Google"
+        mock_llm.return_value = "AI answer"
+
+        result, is_cache, memories, graph_rels = await get_chat_response("hello", "user1")
 
         assert result == "AI answer"
         assert is_cache == False
+        assert memories == [{"memory": "User likes Python"}]
+        assert graph_rels == ["User WORKS_AT Google"]
 
         mock_redis.get.assert_called_once()
-        mock_openai.chat.completions.create.assert_awaited_once()
+        mock_llm.assert_awaited_once()
         mock_memory.search.assert_called_once()
+        mock_search_graph.assert_awaited_once()
 
 
 def test_save_chat_memory():
