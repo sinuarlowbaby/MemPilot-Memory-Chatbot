@@ -26,17 +26,17 @@ async def test_get_chat_response_cache_hit():
 
 @pytest.mark.asyncio
 async def test_get_chat_response_calls_openai_on_cache_miss():
-    """If Redis has no cache, OpenAI should be called"""
+    """If Redis has no cache, the LLM (via call_llm) should be called"""
 
     with patch("app.services.chat_service.redis_client") as mock_redis, \
-         patch("app.services.chat_service.openai_client") as mock_openai, \
+         patch("app.services.chat_service.call_llm", new_callable=AsyncMock) as mock_llm, \
          patch("app.services.chat_service.memory") as mock_memory, \
          patch("app.services.chat_service.search_graph", new_callable=AsyncMock) as mock_search_graph:
-        
+
         mock_redis.get.return_value = None
-        mock_memory.search.return_value = [{"memory": "User likes Python"}]
+        mock_memory.search.return_value = {"results": [{"memory": "User likes Python"}]}
         mock_search_graph.return_value = "User WORKS_AT Google"
-        mock_openai.chat.completions.create = AsyncMock(return_value=MagicMock(choices=[MagicMock(message=MagicMock(content="AI answer"))]))
+        mock_llm.return_value = "AI answer"
 
         result, is_cache, memories, graph_rels = await get_chat_response("hello", "user1")
 
@@ -46,7 +46,7 @@ async def test_get_chat_response_calls_openai_on_cache_miss():
         assert graph_rels == ["User WORKS_AT Google"]
 
         mock_redis.get.assert_called_once()
-        mock_openai.chat.completions.create.assert_awaited_once()
+        mock_llm.assert_awaited_once()
         mock_memory.search.assert_called_once()
         mock_search_graph.assert_awaited_once()
 
