@@ -4,7 +4,6 @@ import uuid
 from app.services.mem0_service import memory
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
-from langsmith import traceable
 from app.schemas.chat_request import ChatRequest
 from app.services.chat_service import get_chat_response, save_chat_memory
 from app.services.neo4j import add_knowledge_to_graph, search_graph, get_all_user_graph
