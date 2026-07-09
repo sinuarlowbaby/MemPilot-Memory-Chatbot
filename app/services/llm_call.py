@@ -1,6 +1,6 @@
 from litellm import acompletion
 
-async def call_llm(user_query, relevent_memories, session_id, model):
+async def call_llm(user_query, relevent_memories,graph_relations, session_id, model):
     # 2. Build the prompt
     prompt = f"""
         You are a helpful assistant. You are given a user query and a list of relevant memories.
@@ -8,6 +8,7 @@ async def call_llm(user_query, relevent_memories, session_id, model):
 
         User Query: {user_query}
         Relevant Memories: {relevent_memories}
+        Graph Relations: {graph_relations}
 
         Answer: 
         """

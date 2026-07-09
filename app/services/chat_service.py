@@ -43,7 +43,7 @@ async def get_chat_response(user_query: str, session_id: str, model: str = "groq
     
     print("Cache Miss. Generating new response.")
 
-    ai_response = await call_llm(user_query, relevent_memories, session_id, model)
+    ai_response = await call_llm(user_query, relevent_memories,graph_relations, session_id, model)
 
     try:
         redis_client.setex(cache_key, 60 * 60, ai_response)
