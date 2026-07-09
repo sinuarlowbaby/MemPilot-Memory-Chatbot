@@ -5,7 +5,7 @@ import redis
 from typing import Tuple, List, Optional
 from app.services.mem0_service import memory
 from app.services.llm_call import call_llm
-from langsmith import traceable
+from langfuse.decorators import observe
 from app.services.hashing import get_cache_key_sha256
 from app.services.neo4j import search_graph
 
@@ -55,7 +55,7 @@ def _set_cached_response(cache_key: str, value: str, ttl_seconds: int = 3600) ->
         logger.error(f"Error writing to Redis cache: {e}", exc_info=True)
 
 
-@traceable(run_type="llm", name="get_chat_response")
+@observe(name="get_chat_response")
 async def get_chat_response(
     user_query: str, 
     session_id: str, 
@@ -89,7 +89,7 @@ async def get_chat_response(
     return ai_response, False, relevant_memories, graph_relations
 
 
-@traceable(run_type="tool", name="save_chat_memory")
+@observe(name="save_chat_memory")
 def save_chat_memory(
     user_query: str, 
     ai_response: str, 
