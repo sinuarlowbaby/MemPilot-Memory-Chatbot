@@ -12,6 +12,15 @@ def test_chat_endpoint_returns_200():
 
         mock_redis.get.return_value = "Cached!"
         mock_search_graph.return_value = "User LIKES Python"
+        mock_openai.beta.chat.completions.parse = AsyncMock(return_value=MagicMock(
+            choices=[
+                MagicMock(
+                    message=MagicMock(
+                        parsed=MagicMock(store=False)
+                    )
+                )
+            ]
+        ))
         response = client.post("/chat", json={
             "user_query": "hello",
             "session_id": "test_user",

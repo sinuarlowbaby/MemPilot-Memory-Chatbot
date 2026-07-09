@@ -3,20 +3,21 @@ import copy
 import logging
 from typing import Optional
 from neo4j import GraphDatabase
-from openai import AsyncOpenAI
-from langsmith import traceable
+from langfuse.openai import AsyncOpenAI
+from langfuse.decorators import observe
 from app.schemas.neo4j_schema import MemoryFacts
 from app.prompts.memory_prompt import MEMORY_PROMPT
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Use AsyncOpenAI directly - avoids litellm schema transformation issues
-openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Use AsyncOpenAI directly - wraps OpenAI client with Langfuse tracing
+openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
 # Connect directly to Neo4j using the official driver
 neo4j_driver = GraphDatabase.driver(
-    os.getenv("NEO4J_URL", "bolt://localhost:7687"),
-    auth=(os.getenv("NEO4J_USERNAME", "neo4j"), os.getenv("NEO4J_PASSWORD", "password"))
+    settings.NEO4J_URL,
+    auth=(settings.NEO4J_USERNAME, settings.NEO4J_PASSWORD)
 )
 
 
@@ -64,7 +65,7 @@ async def extract_structured_knowledge(text_content: str) -> MemoryFacts:
     return response.choices[0].message.parsed
 
 
-@traceable(run_type="tool", name="add_knowledge_to_graph")
+@observe(name="add_knowledge_to_graph")
 async def add_knowledge_to_graph(query: str, ai_response: str, session_id: str) -> Optional[bool]:
     text_content = f"User asked: {query.strip()}\nAssistant answered: {ai_response.strip()}"
 
@@ -119,7 +120,7 @@ async def add_knowledge_to_graph(query: str, ai_response: str, session_id: str) 
     return True
 
 
-@traceable(run_type="tool", name="search_graph")
+@observe(name="search_graph")
 async def search_graph(query: str, session_id: str = "") -> str:
     """
     Search relationships in Neo4j scoped to a specific user session.
