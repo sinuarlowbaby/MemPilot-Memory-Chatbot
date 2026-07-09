@@ -8,7 +8,7 @@ def test_chat_endpoint_returns_200():
     with patch("app.services.chat_service.redis_client") as mock_redis, \
          patch("app.services.chat_service.memory") as mock_memory, \
          patch("app.services.chat_service.search_graph", new_callable=AsyncMock) as mock_search_graph, \
-         patch("app.services.chat_service.openai_client") as mock_openai:
+         patch("app.services.neo4j.openai_client") as mock_openai:
 
         mock_redis.get.return_value = "Cached!"
         mock_search_graph.return_value = "User LIKES Python"
