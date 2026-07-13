@@ -48,6 +48,7 @@ def make_strict_schema(schema: dict) -> dict:
     return schema
 
 
+@observe(name="extract_structured_knowledge")
 async def extract_structured_knowledge(text_content: str) -> MemoryFacts:
     """
     Uses OpenAI's structured outputs (beta.parse) with MEMORY_PROMPT to parse
@@ -88,8 +89,8 @@ async def add_knowledge_to_graph(query: str, ai_response: str, session_id: str) 
         ON CREATE SET target.type = rel.target_type
 
         WITH source, target, rel
-        CALL apoc.create.relationship(source, rel.relation, {confidence: rel.confidence, session_id: $session_id}, target)
-        YIELD rel as created_rel
+        CALL apoc.merge.relationship(source, rel.relation, {session_id: $session_id}, {confidence: rel.confidence}, target, {confidence: rel.confidence})
+        YIELD rel
         RETURN count(*)
         """
 
@@ -97,10 +98,10 @@ async def add_knowledge_to_graph(query: str, ai_response: str, session_id: str) 
 
         relationships_data = [
             {
-                "source": rel.source,
+                "source": rel.source.strip(),
                 "source_type": entity_map.get(rel.source, "Concept"),
-                "relation": rel.relation.upper().replace(" ", "_"),
-                "target": rel.target,
+                "relation": rel.relation.upper().replace(" ", "_").strip(),
+                "target": rel.target.strip(),
                 "target_type": entity_map.get(rel.target, "Concept"),
                 "confidence": rel.confidence
             }

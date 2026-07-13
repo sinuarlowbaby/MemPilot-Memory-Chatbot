@@ -26,8 +26,6 @@ with st.sidebar:
         options=[
             "groq/llama-3.3-70b-versatile",
             "groq/llama-3.1-8b-instant",
-            "groq/gemma2-9b-it",
-            "groq/mixtral-8x7b-32768",
             "openai/gpt-4o-mini",
             "openai/gpt-4o",
             "openai/gpt-4.1",
