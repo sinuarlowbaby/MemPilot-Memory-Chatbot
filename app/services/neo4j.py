@@ -159,7 +159,7 @@ async def search_graph(query: str, session_id: str = "") -> str:
         return ""
 
 
-def get_all_user_graph(session_id: str) -> list[str]:
+def get_all_user_graph(session_id: str) -> list[dict]:
     """
     Return ALL graph relationships stored for a specific user session.
     No text filter — used to display the full memory graph in the UI.
@@ -167,13 +167,22 @@ def get_all_user_graph(session_id: str) -> list[str]:
     cypher_query = """
     MATCH (s:Entity)-[r]->(t:Entity)
     WHERE r.session_id = $session_id
-    RETURN s.name + ' ' + type(r) + ' ' + t.name AS relationship
+    RETURN s.name AS source, s.type AS source_type, type(r) AS relation, t.name AS target, t.type AS target_type
     ORDER BY r.confidence DESC
     """
     try:
         with neo4j_driver.session() as neo4j_session:
             result = neo4j_session.run(cypher_query, session_id=session_id)
-            return [record["relationship"] for record in result]
+            return [
+                {
+                    "source": record["source"],
+                    "source_type": record["source_type"],
+                    "relation": record["relation"],
+                    "target": record["target"],
+                    "target_type": record["target_type"]
+                }
+                for record in result
+            ]
     except Exception:
         logger.exception("Error fetching full user graph")
         return []
